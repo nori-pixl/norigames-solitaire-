@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ソリティア</title>
+    <style>
+        :root { --card-w: 85px; --card-h: 125px; --gap: 15px; --top-margin: 30px; }
+        body { background: #2e7d32; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        
+        #board { 
+            position: relative; 
+            width: 720px; /* カード7枚分 + 隙間 */
+            height: 800px; 
+            margin-top: 20px; 
+        }
+        
+        /* すべてのスロットの共通設定 */
+        .slot { 
+            width: var(--card-w); 
+            height: var(--card-h); 
+            border: 2px solid rgba(255,255,255,0.15); 
+            border-radius: 8px; 
+            position: absolute; 
+            box-sizing: border-box; 
+        }
+        
+        /* 上段エリアの配置を統一 */
+        #deck { top: var(--top-margin); left: 0px; background: rgba(0,0,0,0.1); cursor: pointer; }
+        #waste { top: var(--top-margin); left: 105px; }
+        
+        /* 組札(右上) 4つを横に並べる */
+        .f-slot { top: var(--top-margin); }
+        #f0 { right: 315px; }
+        #f1 { right: 210px; }
+        #f2 { right: 105px; }
+        #f3 { right: 0px; }
+
+        /* 場札(下段) エリア */
+        .tableau-column { top: 180px; width: var(--card-w); position: absolute; }
+
+        /* カードデザイン */
+        .card {
+            width: var(--card-w); height: var(--card-h);
+            background: white; border: 1px solid #bbb; border-radius: 8px;
+            position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 22px; font-weight: bold; cursor: pointer;
+            transition: transform 0.2s ease, top 0.2s ease;
+            user-select: none; box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .card.back { background: #1565c0; border: 3px solid white; color: transparent; }
+        .card.red { color: #d32f2f; }
+        .card.black { color: #212121; }
+    </style>
+</head>
+<body>
+
+<h2 style="color:white; margin-bottom: 0;"></h2>
+<div id="board">
+    <!-- 上段 -->
+    <div id="deck" class="slot"></div>
+    <div id="waste" class="slot"></div>
+    
+    <div class="slot f-slot" data-type="f" id="f0"></div>
+    <div class="slot f-slot" data-type="f" id="f1"></div>
+    <div class="slot f-slot" data-type="f" id="f2"></div>
+    <div class="slot f-slot" data-type="f" id="f3"></div>
+
+    <!-- 場札 (JavaScriptで生成) -->
+    <div id="tableaus"></div>
+</div>
+
+<script>
+const suits = ['♠', '♥', '♦', '♣'];
+const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+let cards = [];
+let draggedCard = null;
+
+function init() {
+    const tableausContainer = document.getElementById('tableaus');
+    // 7列の場札スロット作成
+    for(let i=0; i<7; i++) {
+        let div = document.createElement('div');
+        div.className = 'tableau-column';
+        div.style.left = (i * 105) + 'px';
+        div.id = 't' + i;
+        div.dataset.type = 't';
+        div.ondragover = e => e.preventDefault();
+        div.ondrop = onDrop;
+        tableausContainer.appendChild(div);
+    }
+
+    // デッキ作成
+    let deckStack = [];
+    for (let s of suits) {
+        ranks.forEach((r, i) => {
+            deckStack.push({ suit: s, rank: r, val: i+1, color: (s==='♥'||s==='♦'?'red':'black') });
+        });
+    }
+    deckStack.sort(() => Math.random() - 0.5);
+
+    // 初期配布
+    for(let i=0; i<7; i++) {
+        for(let j=0; j<=i; j++) {
+            let c = deckStack.pop();
+            addCardToSlot(createCardUI(c, j===i), document.getElementById('t'+i));
+        }
+    }
+    cards = deckStack;
+    updateDeckView();
+}
+
+function createCardUI(data, faceUp) {
+    const el = document.createElement('div');
+    el.className = `card ${faceUp ? data.color : 'back'}`;
+    el.innerHTML = faceUp ? `<div>${data.rank}</div><div>${data.suit}</div>` : '';
+    el.dataset.rank = data.rank;
+    el.dataset.suit = data.suit;
+    el.dataset.val = data.val;
+    el.dataset.color = data.color;
+    el.dataset.faceup = faceUp;
+    el.draggable = faceUp;
+
+    el.ondragstart = (e) => {
+        draggedCard = el;
+        e.dataTransfer.setDragImage(el, 40, 60); // ドラッグ中の位置調整
+    };
+    
+    el.onclick = (e) => {
+        if (el.dataset.faceup === "false" && el === el.parentElement.lastChild) {
+            flipCard(el);
+        }
+        e.stopPropagation();
+    };
+    return el;
+}
+
+function flipCard(el) {
+    el.className = `card ${el.dataset.color}`;
+    el.innerHTML = `<div>${el.dataset.rank}</div><div>${el.dataset.suit}</div>`;
+    el.dataset.faceup = "true";
+    el.draggable = true;
+}
+
+function addCardToSlot(cardEl, slotEl) {
+    const isTableau = slotEl.classList.contains('tableau-column');
+    cardEl.style.top = isTableau ? (slotEl.children.length * 25) + 'px' : '0px';
+    slotEl.appendChild(cardEl);
+}
+
+function onDrop(e) {
+    e.preventDefault();
+    const targetSlot = e.currentTarget;
+    const topCard = targetSlot.lastChild;
+    const dragVal = parseInt(draggedCard.dataset.val);
+    const dragColor = draggedCard.dataset.color;
+
+    // ルールチェック
+    if (targetSlot.dataset.type === 't') {
+        if (!topCard) {
+            if (dragVal !== 13) return; // 空地はKのみ
+        } else {
+            if (dragVal !== parseInt(topCard.dataset.val) - 1 || dragColor === topCard.dataset.color) return;
+        }
+    } else if (targetSlot.dataset.type === 'f') {
+        if (!topCard) {
+            if (dragVal !== 1) return; // Aのみ
+        } else {
+            if (draggedCard.dataset.suit !== topCard.dataset.suit || dragVal !== parseInt(topCard.dataset.val) + 1) return;
+        }
+        if (draggedCard.nextSibling) return; // 組札へは1枚ずつのみ
+    } else { return; }
+
+    // 移動実行
+    const sourceSlot = draggedCard.parentElement;
+    const cardsToMove = Array.from(sourceSlot.children).slice(Array.from(sourceSlot.children).indexOf(draggedCard));
+    cardsToMove.forEach(c => addCardToSlot(c, targetSlot));
+}
+
+document.getElementById('deck').onclick = () => {
+    const waste = document.getElementById('waste');
+    if (cards.length > 0) {
+        let c = cards.pop();
+        addCardToSlot(createCardUI(c, true), waste);
+    } else {
+        while(waste.firstChild) {
+            let el = waste.lastChild;
+            cards.push({ suit: el.dataset.suit, rank: el.dataset.rank, val: parseInt(el.dataset.val), color: el.dataset.color });
+            waste.removeChild(el);
+        }
+    }
+    updateDeckView();
+};
+
+function updateDeckView() {
+    const deck = document.getElementById('deck');
+    deck.innerHTML = cards.length > 0 ? `<div class="card back" style="top:0"></div>` : '';
+}
+
+// 組札スロットにドロップ設定
+document.querySelectorAll('.f-slot').forEach(s => {
+    s.ondragover = e => e.preventDefault();
+    s.ondrop = onDrop;
+});
+
+init();
+</script>
+</body>
+</html>
